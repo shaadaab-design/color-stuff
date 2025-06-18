@@ -10,13 +10,12 @@ from skimage.filters import threshold_otsu
 import webcolors
 
 def closest_color_name(rgb_tuple):
-    # Find the closest name from webcolors
     try:
         return webcolors.rgb_to_name(tuple(rgb_tuple))
     except ValueError:
         min_dist = float("inf")
         closest_name = None
-        for hex_code, name in webcolors.CSS3_HEX_TO_NAMES.items():
+        for name, hex_code in webcolors.CSS3_NAMES_TO_HEX.items():
             r_c, g_c, b_c = webcolors.hex_to_rgb(hex_code)
             dist = np.sqrt(sum((val1 - val2) ** 2 for val1, val2 in zip(rgb_tuple, (r_c, g_c, b_c))))
             if dist < min_dist:
