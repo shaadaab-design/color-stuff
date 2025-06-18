@@ -1,16 +1,13 @@
 import streamlit as st
 import numpy as np
+from PIL import Image
 from sklearn.cluster import KMeans
 from collections import defaultdict
-from PIL import Image
 import pandas as pd
-
-from skimage import measure, color, exposure
-from skimage.filters import threshold_local, threshold_otsu
+from skimage import measure, color
 from skimage.color import label2rgb
 
 def closest_color_name(rgb_tuple):
-    # Custom safe color matcher with common CSS3 names
     css3_names_to_rgb = {
         'red': (255, 0, 0),
         'green': (0, 128, 0),
@@ -42,57 +39,45 @@ def closest_color_name(rgb_tuple):
             closest_name = name
     return closest_name
 
-def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, threshold=None,
-                             adaptive=False, block_size=35, offset=10):
-    gray_img = image.convert("L")
-    img_np_gray = np.array(gray_img)
-    img_np_color = np.array(image.convert("RGB"))
+def particle_analysis_color_mask(image, filename, n_color_groups=5, min_area=10, hue_range=(0, 360)):
+    img_np = np.array(image.convert("RGB"))
+    img_hsv = np.array(image.convert("HSV"))
 
-    # Optional contrast enhancement (CLAHE)
-    img_np_gray_eq = exposure.equalize_adapthist(img_np_gray)
-    img_np_gray_eq = (img_np_gray_eq * 255).astype(np.uint8)
+    # Select pixels within hue range (in degrees 0-360)
+    hue = img_hsv[:, :, 0] * 360 / 255  # scale hue to degrees
+    mask = (hue >= hue_range[0]) & (hue <= hue_range[1])
 
-    if adaptive:
-        # Adaptive thresholding
-        adaptive_thresh = threshold_local(img_np_gray_eq, block_size=block_size, offset=offset)
-        binary = img_np_gray_eq > adaptive_thresh
-    else:
-        # Use provided threshold or Otsu
-        if threshold is None:
-            threshold = threshold_otsu(img_np_gray_eq)
-        binary = img_np_gray_eq > threshold
-
-    labels_img = measure.label(binary)
-    props = measure.regionprops(labels_img, intensity_image=img_np_gray_eq)
+    # Label connected regions in mask
+    labels_img = measure.label(mask)
+    props = measure.regionprops(labels_img)
 
     particle_colors = []
     particle_areas = []
 
     for prop in props:
         if prop.area < min_area:
-            continue  # filter out noise
+            continue
         coords = prop.coords
-        mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
+        mean_color = img_np[coords[:, 0], coords[:, 1]].mean(axis=0)
         particle_colors.append(mean_color)
         particle_areas.append(prop.area)
 
     if len(particle_colors) == 0:
-        return [], 0, None, binary  # nothing to analyze
+        return [], 0, None
 
     particle_colors = np.array(particle_colors)
-    lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
 
-    kmeans = KMeans(n_clusters=min(n_color_groups, len(lab_colors)), n_init=10, random_state=42)
-    labels = kmeans.fit_predict(lab_colors)
+    kmeans = KMeans(n_clusters=min(n_color_groups, len(particle_colors)), n_init=10, random_state=42)
+    labels = kmeans.fit_predict(particle_colors)
 
-    groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0, 0, 0], dtype=float)})
+    groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0,0,0], dtype=float)})
 
     for idx, cluster_label in enumerate(labels):
-        groups[cluster_label]["count"] += 1
+        groups[cluster_label]["count"] +=1
         groups[cluster_label]["total_area"] += particle_areas[idx]
         groups[cluster_label]["mean_color_sum"] += particle_colors[idx] * particle_areas[idx]
 
-    total_image_area = img_np_gray_eq.shape[0] * img_np_gray_eq.shape[1]
+    total_image_area = img_np.shape[0] * img_np.shape[1]
     data_rows = []
 
     for group_label, data in groups.items():
@@ -115,64 +100,37 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
             "Mean Intensity": mean_intensity
         })
 
-    overlay = label2rgb(labels_img, image=np.array(image), bg_label=0)
+    overlay = label2rgb(labels_img, image=img_np, bg_label=0)
+    return data_rows, len(props), overlay
 
-    return data_rows, len(props), overlay, binary
+# --- Streamlit UI ---
+st.title("Particle Analyzer: Color-based Segmentation")
 
-# --- STREAMLIT UI ---
-st.title("🧪 Accurate Particle Analyzer with Color Grouping and Adaptive Thresholding")
-st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
-
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
+uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
 if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    st.subheader("⚙️ Detection Settings")
-    min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
-    use_adaptive = st.checkbox("Use Adaptive Thresholding (better for uneven lighting)", value=True)
+    st.subheader("Settings")
+    min_area = st.slider("Min particle area", 1, 500, 20)
+    hue_min = st.slider("Hue min (degrees)", 0, 360, 0)
+    hue_max = st.slider("Hue max (degrees)", 0, 360, 60)
 
-    if use_adaptive:
-        block_size = st.slider("Adaptive Threshold Block Size (odd number)", 3, 101, 35, step=2)
-        offset = st.slider("Adaptive Threshold Offset", -50, 50, 10)
-        actual_threshold = None
-    else:
-        manual_threshold = st.slider("Manual Threshold (0 = auto Otsu)", 0, 255, 0)
-        actual_threshold = None if manual_threshold == 0 else manual_threshold
-        block_size, offset = None, None
+    rows, total_particles, overlay = particle_analysis_color_mask(image, uploaded_file.name,
+                                                                 min_area=min_area,
+                                                                 hue_range=(hue_min, hue_max))
 
-    show_binary = st.checkbox("Show Binary Mask (thresholded image)")
-
-    with st.spinner("Analyzing particles..."):
-        rows, total_particles, overlay, binary = particle_analysis_grouped(
-            image,
-            filename=uploaded_file.name,
-            n_color_groups=6,
-            min_area=min_area,
-            threshold=actual_threshold,
-            adaptive=use_adaptive,
-            block_size=block_size if block_size else 35,
-            offset=offset if offset else 10,
-        )
-
-    st.subheader("🧾 Total Particles Detected")
-    st.write(f"**{total_particles}** particles found (before grouping).")
+    st.write(f"Total particles detected: **{total_particles}**")
 
     if overlay is not None:
-        st.subheader("🖼️ Particle Detection Preview")
-        st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_container_width=True)
-
-    if show_binary and binary is not None:
-        st.subheader("⚫ Binary Mask Preview")
-        st.image(binary.astype(np.uint8) * 255, caption="Binary Mask (White = Particle)", use_container_width=True)
+        st.image((overlay * 255).astype(np.uint8), caption="Particle overlay", use_container_width=True)
 
     if rows:
         df = pd.DataFrame(rows)
-        st.subheader("📊 Particle Group Summary")
         st.dataframe(df)
     else:
-        st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
+        st.warning("No particles detected. Adjust hue range or min area.")
 
 
 
