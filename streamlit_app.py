@@ -44,7 +44,7 @@ def particle_analysis_color_mask(image, filename, n_color_groups=5, min_area=10,
     img_hsv = np.array(image.convert("HSV"))
 
     # Select pixels within hue range (in degrees 0-360)
-    hue = img_hsv[:, :, 0] * 360 / 255  # scale hue to degrees
+    hue = img_hsv[:, :, 0].astype(np.float32) * 360 / 255  # scale hue to degrees
     mask = (hue >= hue_range[0]) & (hue <= hue_range[1])
 
     # Label connected regions in mask
