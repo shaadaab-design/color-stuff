@@ -1,15 +1,14 @@
 import streamlit as st
 import numpy as np
+from PIL import Image
 from sklearn.cluster import KMeans
 from collections import defaultdict
-from PIL import Image
-import pandas as pd
-
 from skimage import measure, color
 from skimage.filters import threshold_otsu
 from skimage.color import label2rgb
+import pandas as pd
 
-# Custom CSS3 colors dictionary
+# Minimal CSS3 colors dictionary
 CSS3_NAMES_TO_RGB = {
     'black': (0, 0, 0),
     'white': (255, 255, 255),
@@ -33,9 +32,6 @@ CSS3_NAMES_TO_RGB = {
 }
 
 def closest_color_name(rgb_tuple):
-    """
-    Find the closest CSS3 color name for an RGB tuple.
-    """
     rgb = np.array(rgb_tuple)
     min_dist = float('inf')
     closest_name = None
@@ -47,86 +43,93 @@ def closest_color_name(rgb_tuple):
     return closest_name
 
 def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, threshold=None):
-    gray_img = image.convert("L")
-    img_np_gray = np.array(gray_img)
-    img_np_color = np.array(image.convert("RGB"))
+    try:
+        gray_img = image.convert("L")
+        img_np_gray = np.array(gray_img)
+        img_np_color = np.array(image.convert("RGB"))
 
-    # Use provided threshold or Otsu
-    if threshold is None:
-        threshold = threshold_otsu(img_np_gray)
-    binary = img_np_gray > threshold
+        if threshold is None:
+            threshold = threshold_otsu(img_np_gray)
+        binary = img_np_gray > threshold
 
-    labels_img = measure.label(binary)
-    props = measure.regionprops(labels_img, intensity_image=img_np_gray)
+        labels_img = measure.label(binary)
+        props = measure.regionprops(labels_img, intensity_image=img_np_gray)
 
-    particle_colors = []
-    particle_areas = []
+        particle_colors = []
+        particle_areas = []
 
-    for prop in props:
-        if prop.area < min_area:
-            continue  # filter out noise
-        coords = prop.coords
-        mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
-        particle_colors.append(mean_color)
-        particle_areas.append(prop.area)
+        for prop in props:
+            if prop.area < min_area:
+                continue
+            coords = prop.coords
+            mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
+            particle_colors.append(mean_color)
+            particle_areas.append(prop.area)
 
-    if len(particle_colors) == 0:
-        return [], 0, None  # nothing to analyze
+        if len(particle_colors) == 0:
+            return [], 0, None
 
-    particle_colors = np.array(particle_colors)
-    lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
+        particle_colors = np.array(particle_colors)
+        lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
 
-    kmeans = KMeans(n_clusters=min(n_color_groups, len(lab_colors)), n_init=10, random_state=42)
-    labels = kmeans.fit_predict(lab_colors)
+        kmeans = KMeans(n_clusters=min(n_color_groups, len(lab_colors)), n_init=10, random_state=42)
+        labels = kmeans.fit_predict(lab_colors)
 
-    groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0, 0, 0], dtype=float)})
+        groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0, 0, 0], dtype=float)})
 
-    for idx, cluster_label in enumerate(labels):
-        groups[cluster_label]["count"] += 1
-        groups[cluster_label]["total_area"] += particle_areas[idx]
-        groups[cluster_label]["mean_color_sum"] += particle_colors[idx] * particle_areas[idx]
+        for idx, cluster_label in enumerate(labels):
+            groups[cluster_label]["count"] += 1
+            groups[cluster_label]["total_area"] += particle_areas[idx]
+            groups[cluster_label]["mean_color_sum"] += particle_colors[idx] * particle_areas[idx]
 
-    total_image_area = img_np_gray.shape[0] * img_np_gray.shape[1]
-    data_rows = []
+        total_image_area = img_np_gray.shape[0] * img_np_gray.shape[1]
+        data_rows = []
 
-    for group_label, data in groups.items():
-        count = data["count"]
-        total_area = data["total_area"]
-        avg_size = total_area / count if count > 0 else 0
-        percent_area = (total_area / total_image_area) * 100
-        mean_color = (data["mean_color_sum"] / total_area).astype(int)
-        color_name = closest_color_name(mean_color)
-        mean_intensity = int(np.mean(mean_color))
+        for group_label, data in groups.items():
+            count = data["count"]
+            total_area = data["total_area"]
+            avg_size = total_area / count if count > 0 else 0
+            percent_area = (total_area / total_image_area) * 100
+            mean_color = (data["mean_color_sum"] / total_area).astype(int)
+            color_name = closest_color_name(mean_color)
+            mean_intensity = int(np.mean(mean_color))
 
-        label = f"{filename} ({color_name})"
-        data_rows.append({
-            "Label": label,
-            "Color": color_name,
-            "Count": count,
-            "Total Area": round(total_area, 3),
-            "Average Size": round(avg_size, 3),
-            "Percentage Area": round(percent_area, 3),
-            "Mean Intensity": mean_intensity
-        })
+            label = f"{filename} ({color_name})"
+            data_rows.append({
+                "Label": label,
+                "Color": color_name,
+                "Count": count,
+                "Total Area": round(total_area, 3),
+                "Average Size": round(avg_size, 3),
+                "Percentage Area": round(percent_area, 3),
+                "Mean Intensity": mean_intensity
+            })
 
-    overlay = label2rgb(labels_img, image=np.array(image), bg_label=0)
+        overlay = label2rgb(labels_img, image=np.array(image), bg_label=0)
 
-    return data_rows, len(props), overlay
+        return data_rows, len(props), overlay
 
-# --- STREAMLIT UI ---
+    except Exception as e:
+        st.error(f"Error during analysis: {e}")
+        return [], 0, None
+
 st.title("🧪 Particle Color Analysis")
-st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
+st.write("Upload a high-quality image (e.g., .tif) to analyze particles grouped by color and size.")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file)
+    try:
+        image = Image.open(uploaded_file)
+    except Exception as e:
+        st.error(f"Cannot open image: {e}")
+        st.stop()
+
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
     st.subheader("⚙️ Detection Settings")
     min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
     manual_threshold = st.slider("Threshold (0 = auto Otsu)", 0, 255, 0)
-
     actual_threshold = None if manual_threshold == 0 else manual_threshold
 
     with st.spinner("Analyzing particles..."):
@@ -151,5 +154,7 @@ if uploaded_file:
         st.dataframe(df)
     else:
         st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
+else:
+    st.info("Please upload an image to start analysis.")
 
 
