@@ -9,6 +9,7 @@ from skimage import measure, color
 from skimage.filters import threshold_otsu
 from skimage.color import label2rgb
 import matplotlib.pyplot as plt
+import traceback
 
 def closest_color_name(rgb_tuple):
     # Custom safe color matcher with common CSS3 names
@@ -110,42 +111,48 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     return data_rows, len(props), overlay
 
-# --- STREAMLIT UI ---
-st.title("🧪 partical collor analysis")
-st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
 
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
+# Wrap app logic with try/except for better error display
+try:
+    st.title("🧪 particle color analysis")
+    st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
 
-if uploaded_file:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
-    st.subheader("⚙️ Detection Settings")
-    min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
-    manual_threshold = st.slider("Threshold (0 = auto Otsu)", 0, 255, 0)
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    actual_threshold = None if manual_threshold == 0 else manual_threshold
+        st.subheader("⚙️ Detection Settings")
+        min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
+        manual_threshold = st.slider("Threshold (0 = auto Otsu)", 0, 255, 0)
 
-    with st.spinner("Analyzing particles..."):
-        rows, total_particles, overlay = particle_analysis_grouped(
-            image,
-            filename=uploaded_file.name,
-            n_color_groups=6,
-            min_area=min_area,
-            threshold=actual_threshold
-        )
+        actual_threshold = None if manual_threshold == 0 else manual_threshold
 
-    st.subheader("🧾 Total Particles Detected")
-    st.write(f"**{total_particles}** particles found (before grouping).")
+        with st.spinner("Analyzing particles..."):
+            rows, total_particles, overlay = particle_analysis_grouped(
+                image,
+                filename=uploaded_file.name,
+                n_color_groups=6,
+                min_area=min_area,
+                threshold=actual_threshold
+            )
 
-    if overlay is not None:
-        st.subheader("🖼️ Particle Detection Preview")
-        st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_column_width=True)
+        st.subheader("🧾 Total Particles Detected")
+        st.write(f"**{total_particles}** particles found (before grouping).")
 
-    if rows:
-        df = pd.DataFrame(rows)
-        st.subheader("📊 Particle Group Summary")
-        st.dataframe(df)
-    else:
-        st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
+        if overlay is not None:
+            st.subheader("🖼️ Particle Detection Preview")
+            st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_container_width=True)
+
+        if rows:
+            df = pd.DataFrame(rows)
+            st.subheader("📊 Particle Group Summary")
+            st.dataframe(df)
+        else:
+            st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
+
+except Exception as e:
+    st.error(f"An error occurred: {e}")
+    st.text(traceback.format_exc())
 
