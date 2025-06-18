@@ -11,7 +11,7 @@ from skimage.color import label2rgb
 import matplotlib.pyplot as plt
 
 def closest_color_name(rgb_tuple):
-    # Custom safe color matcher with common CSS3 names
+    # A fixed dictionary of common CSS3 colors
     css3_names_to_rgb = {
         'red': (255, 0, 0),
         'green': (0, 128, 0),
@@ -148,4 +148,5 @@ if uploaded_file:
         st.dataframe(df)
     else:
         st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
+
 
