@@ -5,16 +5,29 @@ from collections import defaultdict
 from PIL import Image
 import pandas as pd
 
-from skimage import measure
+from skimage import measure, color
 from skimage.filters import threshold_otsu
+import webcolors
 
-def rgb_to_hex(rgb):
-    return '#%02x%02x%02x' % tuple(rgb)
+def closest_color_name(rgb_tuple):
+    # Find the closest name from webcolors
+    try:
+        return webcolors.rgb_to_name(tuple(rgb_tuple))
+    except ValueError:
+        min_dist = float("inf")
+        closest_name = None
+        for hex_code, name in webcolors.CSS3_HEX_TO_NAMES.items():
+            r_c, g_c, b_c = webcolors.hex_to_rgb(hex_code)
+            dist = np.sqrt(sum((val1 - val2) ** 2 for val1, val2 in zip(rgb_tuple, (r_c, g_c, b_c))))
+            if dist < min_dist:
+                min_dist = dist
+                closest_name = name
+        return closest_name
 
-def particle_analysis_grouped(image, filename, n_color_groups=3):
+def particle_analysis_grouped(image, filename, n_color_groups=5):
     gray_img = image.convert("L")
     img_np_gray = np.array(gray_img)
-    img_np_color = np.array(image)
+    img_np_color = np.array(image.convert("RGB"))  # Ensure RGB
 
     thresh = threshold_otsu(img_np_gray)
     binary = img_np_gray > thresh
@@ -36,9 +49,11 @@ def particle_analysis_grouped(image, filename, n_color_groups=3):
 
     particle_colors = np.array(particle_colors)
 
-    kmeans = KMeans(n_clusters=n_color_groups)
-    labels = kmeans.fit_predict(particle_colors)
-    cluster_centers = kmeans.cluster_centers_.astype(int)
+    # Convert to LAB color space for perceptual accuracy
+    lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
+
+    kmeans = KMeans(n_clusters=min(n_color_groups, len(lab_colors)), n_init=10, random_state=42)
+    labels = kmeans.fit_predict(lab_colors)
 
     groups = defaultdict(lambda: {"count":0, "total_area":0, "mean_color_sum":np.array([0,0,0], dtype=float)})
 
@@ -57,28 +72,25 @@ def particle_analysis_grouped(image, filename, n_color_groups=3):
         avg_size = total_area / count if count > 0 else 0
         percent_area = (total_area / total_image_area) * 100
         mean_color = (data["mean_color_sum"] / total_area).astype(int)
-        hex_color = rgb_to_hex(mean_color)
-        # mean intensity approximated as average of grayscale intensities weighted by area
-        mean_intensity = int(np.mean(mean_color))  # or use another method if you want
+        color_name = closest_color_name(mean_color)
+        mean_intensity = int(np.mean(mean_color))
 
-        # Compose a label like: filename (color)
-        color_name = f"RGB({mean_color[0]}, {mean_color[1]}, {mean_color[2]})"
         label = f"{filename} ({color_name})"
 
         data_rows.append({
             "Label": label,
+            "Color": color_name,
             "Count": count,
-            "Total Area": total_area,
-            "Average Size": avg_size,
-            "Percentage Area": percent_area,
-            "Mean Intensity": mean_intensity,
-            "Hex Color": hex_color
+            "Total Area": round(total_area, 3),
+            "Average Size": round(avg_size, 3),
+            "Percentage Area": round(percent_area, 3),
+            "Mean Intensity": mean_intensity
         })
 
     return data_rows
 
-st.title("🎨 Particle Group Analysis Table")
-st.write("Upload your image and see grouped particle stats in a table.")
+st.title("🧪 Particle Group Analysis (Named Colors)")
+st.write("Upload an image (e.g. TIFF) and get detailed particle group stats by color.")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
@@ -89,16 +101,11 @@ if uploaded_file:
     filename = uploaded_file.name
 
     with st.spinner("Analyzing grouped particles..."):
-        rows = particle_analysis_grouped(image, filename, n_color_groups=3)
+        rows = particle_analysis_grouped(image, filename, n_color_groups=6)
 
     if rows is None or len(rows) == 0:
-        st.write("No particles detected.")
+        st.error("No particles detected.")
     else:
-        df = pd.DataFrame(rows)
-        # Show color swatch instead of Hex Color string (optional)
-        def color_cell(val):
-            return f'background-color: {val}'
-
-        st.subheader("Particle Groups Summary Table")
-        # Show table with colors highlighted in 'Hex Color' column
-        st.dataframe(df.style.applymap(color_cell, subset=["Hex Color"]))
+        df = pd.DataFrame(rows, columns=["Label", "Color", "Count", "Total Area", "Average Size", "Percentage Area", "Mean Intensity"])
+        st.subheader("📋 Particle Summary Table")
+        st.dataframe(df)
