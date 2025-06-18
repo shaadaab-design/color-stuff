@@ -9,7 +9,6 @@ from skimage import measure, color
 from skimage.filters import threshold_otsu
 from skimage.color import label2rgb
 import matplotlib.pyplot as plt
-import traceback
 
 def closest_color_name(rgb_tuple):
     # Custom safe color matcher with common CSS3 names
@@ -111,10 +110,9 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     return data_rows, len(props), overlay
 
-
-# Wrap app logic with try/except for better error display
+# --- STREAMLIT UI ---
 try:
-    st.title("🧪 particle color analysis")
+    st.title("🧪 Particle Color Analysis")
     st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
 
     uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
@@ -153,6 +151,6 @@ try:
             st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
 
 except Exception as e:
-    st.error(f"An error occurred: {e}")
-    st.text(traceback.format_exc())
+    st.error(f"Error type: {type(e).__name__}")
+    st.error(f"Error message: {e}")
 
