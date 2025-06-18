@@ -118,7 +118,7 @@ uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", 
 
 if uploaded_file:
     image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_container_width=True)
+    st.image(image, caption="Uploaded Image", use_column_width=True)
 
     st.subheader("⚙️ Detection Settings")
     min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
@@ -140,7 +140,7 @@ if uploaded_file:
 
     if overlay is not None:
         st.subheader("🖼️ Particle Detection Preview")
-        st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_container_width=True)
+        st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_column_width=True)
 
     if rows:
         df = pd.DataFrame(rows)
