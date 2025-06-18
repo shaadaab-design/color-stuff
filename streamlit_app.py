@@ -8,36 +8,39 @@ import pandas as pd
 from skimage import measure, color
 from skimage.filters import threshold_otsu
 from skimage.color import label2rgb
-import matplotlib.pyplot as plt
+
+# Custom CSS3 colors dictionary
+CSS3_NAMES_TO_RGB = {
+    'black': (0, 0, 0),
+    'white': (255, 255, 255),
+    'red': (255, 0, 0),
+    'lime': (0, 255, 0),
+    'blue': (0, 0, 255),
+    'yellow': (255, 255, 0),
+    'cyan': (0, 255, 255),
+    'magenta': (255, 0, 255),
+    'silver': (192, 192, 192),
+    'gray': (128, 128, 128),
+    'maroon': (128, 0, 0),
+    'olive': (128, 128, 0),
+    'green': (0, 128, 0),
+    'purple': (128, 0, 128),
+    'teal': (0, 128, 128),
+    'navy': (0, 0, 128),
+    'orange': (255, 165, 0),
+    'pink': (255, 192, 203),
+    'brown': (165, 42, 42),
+}
 
 def closest_color_name(rgb_tuple):
-    # Custom safe color matcher with common CSS3-like color names
-    css3_names_to_rgb = {
-        'red': (255, 0, 0),
-        'green': (0, 128, 0),
-        'blue': (0, 0, 255),
-        'black': (0, 0, 0),
-        'white': (255, 255, 255),
-        'gray': (128, 128, 128),
-        'yellow': (255, 255, 0),
-        'cyan': (0, 255, 255),
-        'magenta': (255, 0, 255),
-        'orange': (255, 165, 0),
-        'pink': (255, 192, 203),
-        'purple': (128, 0, 128),
-        'brown': (165, 42, 42),
-        'lime': (0, 255, 0),
-        'navy': (0, 0, 128),
-        'maroon': (128, 0, 0),
-        'olive': (128, 128, 0),
-        'teal': (0, 128, 128),
-        'silver': (192, 192, 192),
-    }
-
-    min_dist = float("inf")
+    """
+    Find the closest CSS3 color name for an RGB tuple.
+    """
+    rgb = np.array(rgb_tuple)
+    min_dist = float('inf')
     closest_name = None
-    for name, rgb in css3_names_to_rgb.items():
-        dist = sum((comp1 - comp2) ** 2 for comp1, comp2 in zip(rgb_tuple, rgb)) ** 0.5
+    for name, rgb_val in CSS3_NAMES_TO_RGB.items():
+        dist = np.linalg.norm(rgb - np.array(rgb_val))
         if dist < min_dist:
             min_dist = dist
             closest_name = name
@@ -48,8 +51,8 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
     img_np_gray = np.array(gray_img)
     img_np_color = np.array(image.convert("RGB"))
 
-    # Use provided threshold or Otsu's method if 0 or None
-    if threshold is None or threshold == 0:
+    # Use provided threshold or Otsu
+    if threshold is None:
         threshold = threshold_otsu(img_np_gray)
     binary = img_np_gray > threshold
 
@@ -61,19 +64,20 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     for prop in props:
         if prop.area < min_area:
-            continue  # Filter small noise
+            continue  # filter out noise
         coords = prop.coords
         mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
         particle_colors.append(mean_color)
         particle_areas.append(prop.area)
 
     if len(particle_colors) == 0:
-        return [], 0, None
+        return [], 0, None  # nothing to analyze
 
     particle_colors = np.array(particle_colors)
+    lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
 
-    kmeans = KMeans(n_clusters=min(n_color_groups, len(particle_colors)), n_init=10, random_state=42)
-    labels = kmeans.fit_predict(particle_colors)
+    kmeans = KMeans(n_clusters=min(n_color_groups, len(lab_colors)), n_init=10, random_state=42)
+    labels = kmeans.fit_predict(lab_colors)
 
     groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0, 0, 0], dtype=float)})
 
@@ -109,6 +113,7 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     return data_rows, len(props), overlay
 
+# --- STREAMLIT UI ---
 st.title("🧪 Particle Color Analysis")
 st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
 
@@ -146,4 +151,5 @@ if uploaded_file:
         st.dataframe(df)
     else:
         st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
+
 
