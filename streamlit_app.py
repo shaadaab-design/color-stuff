@@ -10,45 +10,15 @@ from skimage.filters import threshold_otsu
 from skimage.color import label2rgb
 import matplotlib.pyplot as plt
 
-def closest_color_name(rgb_tuple):
-    # A fixed dictionary of common CSS3 colors
-    css3_names_to_rgb = {
-        'red': (255, 0, 0),
-        'green': (0, 128, 0),
-        'blue': (0, 0, 255),
-        'black': (0, 0, 0),
-        'white': (255, 255, 255),
-        'gray': (128, 128, 128),
-        'yellow': (255, 255, 0),
-        'cyan': (0, 255, 255),
-        'magenta': (255, 0, 255),
-        'orange': (255, 165, 0),
-        'pink': (255, 192, 203),
-        'purple': (128, 0, 128),
-        'brown': (165, 42, 42),
-        'lime': (0, 255, 0),
-        'navy': (0, 0, 128),
-        'maroon': (128, 0, 0),
-        'olive': (128, 128, 0),
-        'teal': (0, 128, 128),
-        'silver': (192, 192, 192),
-    }
-
-    min_dist = float("inf")
-    closest_name = None
-    for name, rgb in css3_names_to_rgb.items():
-        dist = sum((comp1 - comp2) ** 2 for comp1, comp2 in zip(rgb_tuple, rgb)) ** 0.5
-        if dist < min_dist:
-            min_dist = dist
-            closest_name = name
-    return closest_name
+def rgb_to_hex(rgb):
+    return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
 def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, threshold=None):
     gray_img = image.convert("L")
     img_np_gray = np.array(gray_img)
     img_np_color = np.array(image.convert("RGB"))
 
-    # Use provided threshold or Otsu
+    # Use provided threshold or Otsu's method
     if threshold is None:
         threshold = threshold_otsu(img_np_gray)
     binary = img_np_gray > threshold
@@ -61,14 +31,14 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     for prop in props:
         if prop.area < min_area:
-            continue  # filter out noise
+            continue  # Filter out noise/small particles
         coords = prop.coords
         mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
         particle_colors.append(mean_color)
         particle_areas.append(prop.area)
 
     if len(particle_colors) == 0:
-        return [], 0, None  # nothing to analyze
+        return [], 0, None  # No particles detected
 
     particle_colors = np.array(particle_colors)
     lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
@@ -92,13 +62,13 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
         avg_size = total_area / count if count > 0 else 0
         percent_area = (total_area / total_image_area) * 100
         mean_color = (data["mean_color_sum"] / total_area).astype(int)
-        color_name = closest_color_name(mean_color)
+        color_hex = rgb_to_hex(mean_color)
         mean_intensity = int(np.mean(mean_color))
 
-        label = f"{filename} ({color_name})"
+        label = f"{filename} ({color_hex})"
         data_rows.append({
             "Label": label,
-            "Color": color_name,
+            "Color (Hex)": color_hex,
             "Count": count,
             "Total Area": round(total_area, 3),
             "Average Size": round(avg_size, 3),
