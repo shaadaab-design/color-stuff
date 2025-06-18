@@ -110,7 +110,6 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     return data_rows, len(props), overlay
 
-# --- STREAMLIT UI ---
 try:
     st.title("🧪 Particle Color Analysis")
     st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
