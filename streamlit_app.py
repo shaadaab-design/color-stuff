@@ -49,15 +49,18 @@ def particle_analysis(image):
     avg_size = total_area / count if count > 0 else 0
     percent_area = total_area / (img_np.shape[0] * img_np.shape[1]) * 100
 
-    # Mean intensity per particle
-    means = [prop.mean_intensity for prop in props]
+    # Overall mean intensity weighted by area
+    if count > 0:
+        weighted_mean = sum([prop.mean_intensity * prop.area for prop in props]) / total_area
+    else:
+        weighted_mean = 0
 
     return {
         "count": count,
         "total_area": total_area,
         "average_size": avg_size,
         "percent_area": percent_area,
-        "mean_intensity": means,
+        "mean_intensity": weighted_mean,
         "props": props
     }
 
@@ -93,7 +96,4 @@ if uploaded_file:
     st.write(f"Total Area (pixels): {stats['total_area']}")
     st.write(f"Average Size (pixels): {stats['average_size']:.2f}")
     st.write(f"Percentage Area: {stats['percent_area']:.2f}%")
-
-    st.write("Mean intensity of each particle:")
-    for i, mean_val in enumerate(stats["mean_intensity"], 1):
-        st.write(f"Particle {i}: {mean_val:.2f}")
+    st.write(f"Overall Mean Intensity: {stats['mean_intensity']:.2f}")
