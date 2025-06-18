@@ -1,83 +1,94 @@
 import streamlit as st
 import numpy as np
+from sklearn.cluster import KMeans
 from collections import defaultdict
 from PIL import Image
 import pandas as pd
-
 from skimage import measure, color
-from skimage.filters import threshold_otsu
-from skimage.color import label2rgb
+from skimage.color import rgb2lab, label2rgb
 
-def dominant_color_name(rgb_tuple):
-    r, g, b = rgb_tuple
-    if r > g and r > b:
-        return "red"
-    elif g > r and g > b:
-        return "green"
-    elif b > r and b > g:
-        return "blue"
-    elif abs(r - g) < 10 and abs(g - b) < 10:
-        return "gray"
-    elif g > 100 and b > 100:
-        return "teal"
-    elif r > 100 and g > 100:
-        return "yellow" if b < 100 else "white"
-    elif r > 100 and b > 100:
-        return "magenta"
-    else:
-        return "unknown"
+def closest_color_name(rgb_tuple):
+    # Common CSS3 colors for matching
+    css3_names_to_rgb = {
+        'red': (255, 0, 0),
+        'green': (0, 128, 0),
+        'blue': (0, 0, 255),
+        'black': (0, 0, 0),
+        'white': (255, 255, 255),
+        'gray': (128, 128, 128),
+        'yellow': (255, 255, 0),
+        'cyan': (0, 255, 255),
+        'magenta': (255, 0, 255),
+        'orange': (255, 165, 0),
+        'pink': (255, 192, 203),
+        'purple': (128, 0, 128),
+        'brown': (165, 42, 42),
+        'lime': (0, 255, 0),
+        'navy': (0, 0, 128),
+        'maroon': (128, 0, 0),
+        'olive': (128, 128, 0),
+        'teal': (0, 128, 128),
+        'silver': (192, 192, 192),
+    }
 
-def particle_analysis_dominant_color(image, filename, min_area=10, threshold=None):
-    gray_img = image.convert("L")
-    img_np_gray = np.array(gray_img)
-    img_np_color = np.array(image.convert("RGB"))
+    min_dist = float("inf")
+    closest_name = None
+    for name, rgb in css3_names_to_rgb.items():
+        dist = np.linalg.norm(np.array(rgb_tuple) - np.array(rgb))
+        if dist < min_dist:
+            min_dist = dist
+            closest_name = name
+    return closest_name
 
-    if threshold is None:
-        threshold = threshold_otsu(img_np_gray)
-    binary = img_np_gray > threshold
+def particle_analysis(image, filename, n_clusters=6, min_area=10):
+    # Convert image to numpy arrays
+    img_rgb = np.array(image.convert("RGB"))
 
-    labels_img = measure.label(binary)
-    props = measure.regionprops(labels_img, intensity_image=img_np_gray)
+    # Flatten pixels for clustering
+    pixels = img_rgb.reshape(-1, 3)
 
-    total_image_area = img_np_gray.shape[0] * img_np_gray.shape[1]
-    data_groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0, 0, 0], dtype=float)})
+    # KMeans clustering for dominant colors
+    kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+    labels = kmeans.fit_predict(pixels)
+    centers = kmeans.cluster_centers_
 
-    for prop in props:
-        if prop.area < min_area:
-            continue
-        coords = prop.coords
-        mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
-        color_name = dominant_color_name(mean_color)
-        data_groups[color_name]["count"] += 1
-        data_groups[color_name]["total_area"] += prop.area
-        data_groups[color_name]["mean_color_sum"] += mean_color * prop.area
+    # Create label image for segmentation
+    label_img = labels.reshape(img_rgb.shape[0], img_rgb.shape[1])
 
+    # Analyze each cluster as a group of particles
     data_rows = []
-    for color_name, data in data_groups.items():
-        count = data["count"]
-        total_area = data["total_area"]
-        avg_size = total_area / count if count else 0
-        percent_area = (total_area / total_image_area) * 100
-        mean_color = (data["mean_color_sum"] / total_area).astype(int)
+    total_image_area = img_rgb.shape[0] * img_rgb.shape[1]
+
+    for cluster_id, center_color in enumerate(centers):
+        mask = label_img == cluster_id
+        area = np.sum(mask)
+        if area < min_area:
+            continue
+
+        percent_area = (area / total_image_area) * 100
+        mean_color = center_color.astype(int)
+        color_name = closest_color_name(mean_color)
         mean_intensity = int(np.mean(mean_color))
 
         label = f"{filename} ({color_name})"
+
         data_rows.append({
             "Label": label,
             "Color": color_name,
-            "Count": count,
-            "Total Area": round(total_area, 3),
-            "Average Size": round(avg_size, 3),
+            "Count": "-",  # No individual particle count here
+            "Total Area": round(area, 2),
+            "Average Size": "-",
             "Percentage Area": round(percent_area, 3),
             "Mean Intensity": mean_intensity
         })
 
-    overlay = label2rgb(labels_img, image=np.array(image), bg_label=0)
-    return data_rows, len(props), overlay
+    # Generate overlay image with cluster colors
+    overlay = label2rgb(label_img, image=img_rgb, bg_label=-1)
+
+    return data_rows, overlay
 
 # --- STREAMLIT UI ---
-st.title("🎯 Accurate Particle Analyzer (Color by Channel Dominance)")
-st.write("Upload a particle image to detect and summarize by RED, GREEN, BLUE dominance.")
+st.title("🧪 Accurate Particle Color Grouping")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
@@ -85,29 +96,19 @@ if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    st.subheader("⚙️ Detection Settings")
-    min_area = st.slider("Minimum Particle Area", 1, 1000, 20)
-    manual_thresh = st.slider("Manual Threshold (0 = auto)", 0, 255, 0)
-    actual_thresh = None if manual_thresh == 0 else manual_thresh
+    n_clusters = st.slider("Number of Color Groups (Clusters)", 2, 15, 6)
+    min_area = st.slider("Minimum Area (pixels)", 1, 500, 10)
 
-    with st.spinner("Analyzing particles..."):
-        rows, total_particles, overlay = particle_analysis_dominant_color(
-            image,
-            uploaded_file.name,
-            min_area=min_area,
-            threshold=actual_thresh
-        )
-
-    st.subheader("🧾 Total Particles Detected")
-    st.write(f"**{total_particles}** particles (before grouping).")
-
-    if overlay is not None:
-        st.subheader("🖼️ Particle Overlay Preview")
-        st.image((overlay * 255).astype(np.uint8), caption="Overlay", use_container_width=True)
+    with st.spinner("Analyzing image colors..."):
+        rows, overlay = particle_analysis(image, uploaded_file.name, n_clusters=n_clusters, min_area=min_area)
 
     if rows:
         df = pd.DataFrame(rows)
-        st.subheader("📊 Summary by Color Group")
+        st.subheader("📊 Particle Color Group Summary")
         st.dataframe(df)
+
+        st.subheader("🖼️ Color Group Overlay")
+        st.image((overlay * 255).astype(np.uint8), use_container_width=True)
     else:
-        st.warning("No particles found. Try adjusting threshold or area filter.")
+        st.warning("No significant color groups detected. Try lowering the minimum area or increasing clusters.")
+
