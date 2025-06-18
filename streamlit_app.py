@@ -10,19 +10,37 @@ from skimage.filters import threshold_otsu
 import webcolors
 
 def closest_color_name(rgb_tuple):
-    try:
-        return webcolors.rgb_to_name(rgb_tuple)
-    except ValueError:
-        # Build list of all CSS3 named colors from webcolors
-        min_dist = float('inf')
-        closest_name = None
-        for name in webcolors.CSS3_NAMES:
-            r_c, g_c, b_c = webcolors.name_to_rgb(name)
-            dist = ((r_c - rgb_tuple[0]) ** 2 + (g_c - rgb_tuple[1]) ** 2 + (b_c - rgb_tuple[2]) ** 2) ** 0.5
-            if dist < min_dist:
-                min_dist = dist
-                closest_name = name
-        return closest_name
+    # Manually defined color names and their RGB values
+    css3_names_to_rgb = {
+        'red': (255, 0, 0),
+        'green': (0, 128, 0),
+        'blue': (0, 0, 255),
+        'black': (0, 0, 0),
+        'white': (255, 255, 255),
+        'gray': (128, 128, 128),
+        'yellow': (255, 255, 0),
+        'cyan': (0, 255, 255),
+        'magenta': (255, 0, 255),
+        'orange': (255, 165, 0),
+        'pink': (255, 192, 203),
+        'purple': (128, 0, 128),
+        'brown': (165, 42, 42),
+        'lime': (0, 255, 0),
+        'navy': (0, 0, 128),
+        'maroon': (128, 0, 0),
+        'olive': (128, 128, 0),
+        'teal': (0, 128, 128),
+        'silver': (192, 192, 192),
+    }
+
+    min_dist = float("inf")
+    closest_name = None
+    for name, rgb in css3_names_to_rgb.items():
+        dist = sum((comp1 - comp2) ** 2 for comp1, comp2 in zip(rgb_tuple, rgb)) ** 0.5
+        if dist < min_dist:
+            min_dist = dist
+            closest_name = name
+    return closest_name
 
 def particle_analysis_grouped(image, filename, n_color_groups=5):
     gray_img = image.convert("L")
