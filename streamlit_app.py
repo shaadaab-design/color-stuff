@@ -11,7 +11,7 @@ from skimage.color import label2rgb
 import matplotlib.pyplot as plt
 
 def closest_color_name(rgb_tuple):
-    # Custom safe color matcher with common CSS3 names
+    # Custom safe color matcher with common CSS3-like color names
     css3_names_to_rgb = {
         'red': (255, 0, 0),
         'green': (0, 128, 0),
@@ -48,8 +48,8 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
     img_np_gray = np.array(gray_img)
     img_np_color = np.array(image.convert("RGB"))
 
-    # Use provided threshold or Otsu
-    if threshold is None:
+    # Use provided threshold or Otsu's method if 0 or None
+    if threshold is None or threshold == 0:
         threshold = threshold_otsu(img_np_gray)
     binary = img_np_gray > threshold
 
@@ -61,20 +61,19 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     for prop in props:
         if prop.area < min_area:
-            continue  # filter out noise
+            continue  # Filter small noise
         coords = prop.coords
         mean_color = img_np_color[coords[:, 0], coords[:, 1]].mean(axis=0)
         particle_colors.append(mean_color)
         particle_areas.append(prop.area)
 
     if len(particle_colors) == 0:
-        return [], 0, None  # nothing to analyze
+        return [], 0, None
 
     particle_colors = np.array(particle_colors)
-    lab_colors = color.rgb2lab(particle_colors.reshape(-1, 1, 3).astype(np.uint8) / 255.0).reshape(-1, 3)
 
-    kmeans = KMeans(n_clusters=min(n_color_groups, len(lab_colors)), n_init=10, random_state=42)
-    labels = kmeans.fit_predict(lab_colors)
+    kmeans = KMeans(n_clusters=min(n_color_groups, len(particle_colors)), n_init=10, random_state=42)
+    labels = kmeans.fit_predict(particle_colors)
 
     groups = defaultdict(lambda: {"count": 0, "total_area": 0, "mean_color_sum": np.array([0, 0, 0], dtype=float)})
 
@@ -110,46 +109,41 @@ def particle_analysis_grouped(image, filename, n_color_groups=5, min_area=10, th
 
     return data_rows, len(props), overlay
 
-try:
-    st.title("🧪 Particle Color Analysis")
-    st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
+st.title("🧪 Particle Color Analysis")
+st.write("Upload a high-quality image (e.g. .tif) to analyze particles grouped by color and size.")
 
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_container_width=True)
+if uploaded_file:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
-        st.subheader("⚙️ Detection Settings")
-        min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
-        manual_threshold = st.slider("Threshold (0 = auto Otsu)", 0, 255, 0)
+    st.subheader("⚙️ Detection Settings")
+    min_area = st.slider("Minimum Particle Area (to remove noise)", 1, 500, 20)
+    manual_threshold = st.slider("Threshold (0 = auto Otsu)", 0, 255, 0)
 
-        actual_threshold = None if manual_threshold == 0 else manual_threshold
+    actual_threshold = None if manual_threshold == 0 else manual_threshold
 
-        with st.spinner("Analyzing particles..."):
-            rows, total_particles, overlay = particle_analysis_grouped(
-                image,
-                filename=uploaded_file.name,
-                n_color_groups=6,
-                min_area=min_area,
-                threshold=actual_threshold
-            )
+    with st.spinner("Analyzing particles..."):
+        rows, total_particles, overlay = particle_analysis_grouped(
+            image,
+            filename=uploaded_file.name,
+            n_color_groups=6,
+            min_area=min_area,
+            threshold=actual_threshold
+        )
 
-        st.subheader("🧾 Total Particles Detected")
-        st.write(f"**{total_particles}** particles found (before grouping).")
+    st.subheader("🧾 Total Particles Detected")
+    st.write(f"**{total_particles}** particles found (before grouping).")
 
-        if overlay is not None:
-            st.subheader("🖼️ Particle Detection Preview")
-            st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_container_width=True)
+    if overlay is not None:
+        st.subheader("🖼️ Particle Detection Preview")
+        st.image((overlay * 255).astype(np.uint8), caption="Colored Overlay of Detected Particles", use_container_width=True)
 
-        if rows:
-            df = pd.DataFrame(rows)
-            st.subheader("📊 Particle Group Summary")
-            st.dataframe(df)
-        else:
-            st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
-
-except Exception as e:
-    st.error(f"Error type: {type(e).__name__}")
-    st.error(f"Error message: {e}")
+    if rows:
+        df = pd.DataFrame(rows)
+        st.subheader("📊 Particle Group Summary")
+        st.dataframe(df)
+    else:
+        st.warning("No particles matched the filtering settings. Try lowering the minimum area or adjusting the threshold.")
 
