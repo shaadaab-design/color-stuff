@@ -11,16 +11,16 @@ import webcolors
 
 def closest_color_name(rgb_tuple):
     try:
-        return webcolors.rgb_to_name(tuple(rgb_tuple))
+        return webcolors.rgb_to_name(rgb_tuple)
     except ValueError:
         min_dist = float("inf")
         closest_name = None
-        for name, hex_code in webcolors.CSS3_NAMES_TO_HEX.items():
-            r_c, g_c, b_c = webcolors.hex_to_rgb(hex_code)
-            dist = np.sqrt(sum((val1 - val2) ** 2 for val1, val2 in zip(rgb_tuple, (r_c, g_c, b_c))))
+        for hex_val in webcolors.CSS3_NAMES_TO_HEX.values():
+            r_c, g_c, b_c = webcolors.hex_to_rgb(hex_val)
+            dist = ((r_c - rgb_tuple[0]) ** 2 + (g_c - rgb_tuple[1]) ** 2 + (b_c - rgb_tuple[2]) ** 2) ** 0.5
             if dist < min_dist:
                 min_dist = dist
-                closest_name = name
+                closest_name = webcolors.hex_to_name(hex_val)
         return closest_name
 
 def particle_analysis_grouped(image, filename, n_color_groups=5):
