@@ -35,7 +35,7 @@ if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    threshold = st.slider("DeltaE Sensitivity Threshold", 5, 60, 25)
+    threshold = 35  # Fixed for optimal green sensitivity
 
     img_np = np.array(image)
     h, w, _ = img_np.shape
@@ -125,3 +125,4 @@ if uploaded_file:
         ax.set_title(f"Anomaly Regions: {label_name}")
         ax.axis("off")
         st.pyplot(fig)
+
