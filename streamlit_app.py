@@ -12,7 +12,7 @@ hue_ref_colors = {
     "red": [(255, 0, 0)],
     "orange": [(255, 165, 0)],
     "yellow": [(255, 255, 0)],
-    "green": [(0, 255, 0), (50, 200, 50), (128, 255, 128), (100, 255, 150)],
+    "green": [(0, 255, 0), (50, 200, 50), (128, 255, 128), (100, 255, 150), (90, 160, 90), (80, 200, 120), (0, 128, 0), (60, 180, 75), (30, 100, 30)],
     "cyan": [(0, 255, 255)],
     "blue": [(0, 0, 255)],
     "purple": [(128, 0, 128)],
@@ -104,9 +104,10 @@ if uploaded_file:
     reconstructed_img = reconstructed_img.reshape((h, w, 3))
     st.image(Image.fromarray(reconstructed_img), caption="DeltaE Reconstructed Image", use_column_width=True)
 
-    # AI anomaly detection: least frequent label mask
+    # AI anomaly detection: least frequent label mask with adjustable threshold
     st.subheader("🚨 Anomaly Detection")
-    rare_labels = [k for k, v in counter.items() if v < 0.01 * total and k != "unclassified"]
+    anomaly_thresh = st.slider("Anomaly Threshold (% of pixels)", 0.01, 5.0, 1.0)
+    rare_labels = [k for k, v in counter.items() if (v / total * 100) < anomaly_thresh and k != "unclassified"]
     st.write("Rare particle types (potential anomalies):", rare_labels)
 
     for label_name in rare_labels:
