@@ -3,9 +3,12 @@ import numpy as np
 from PIL import Image
 from collections import Counter
 import pandas as pd
-import cv2
+import colorsys
 
-# Convert RGB to HSV and classify colors into bins
+# Convert RGB to HSV (0-360 hue scale)
+def rgb_to_hsv_pixel(rgb):
+    r, g, b = rgb
+    return tuple(round(i * 255) for i in colorsys.rgb_to_hsv(r / 255, g / 255, b / 255))
 
 def classify_color_hue(hsv):
     h, s, v = hsv
@@ -15,7 +18,7 @@ def classify_color_hue(hsv):
         return "white"
     elif s < 30:
         return "gray"
-    if 0 <= h <= 15 or h >= 165:
+    if 0 <= h <= 15 or h >= 230:
         return "red"
     elif 16 <= h <= 45:
         return "orange"
@@ -41,14 +44,11 @@ if uploaded_file:
 
     with st.spinner("Analyzing pixel color categories with medical-level precision..."):
         img_np = np.array(image)
-        h, w, _ = img_np.shape
+        flat_pixels = img_np.reshape(-1, 3)
 
-        # Convert RGB to HSV
-        hsv_img = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
-        hsv_reshaped = hsv_img.reshape(-1, 3)
+        hsv_pixels = [rgb_to_hsv_pixel(rgb) for rgb in flat_pixels]
+        labels = [classify_color_hue(hsv) for hsv in hsv_pixels]
 
-        # Classify by perceptual hue ranges
-        labels = [classify_color_hue(pixel) for pixel in hsv_reshaped]
         counter = Counter(labels)
         total = sum(counter.values())
 
@@ -56,7 +56,7 @@ if uploaded_file:
         data_rows = []
         for name, count in counter.items():
             mask = np.array(labels) == name
-            selected_pixels = img_np.reshape(-1, 3)[mask]
+            selected_pixels = flat_pixels[mask]
             mean_intensity = int(np.mean(selected_pixels)) if len(selected_pixels) > 0 else 0
             data_rows.append({
                 "Particle": f"CTL LLLOS 467.tif ({name})",
@@ -74,4 +74,3 @@ if uploaded_file:
 
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button("Download CSV", csv, "hue_classified_summary.csv", "text/csv")
-
