@@ -1,114 +1,79 @@
 import streamlit as st
 import numpy as np
 from sklearn.cluster import KMeans
-from collections import defaultdict
+from collections import Counter
 from PIL import Image
 import pandas as pd
-from skimage import measure, color
-from skimage.color import rgb2lab, label2rgb
+import matplotlib.pyplot as plt
 
 def closest_color_name(rgb_tuple):
-    # Common CSS3 colors for matching
     css3_names_to_rgb = {
-        'red': (255, 0, 0),
-        'green': (0, 128, 0),
-        'blue': (0, 0, 255),
-        'black': (0, 0, 0),
-        'white': (255, 255, 255),
-        'gray': (128, 128, 128),
-        'yellow': (255, 255, 0),
-        'cyan': (0, 255, 255),
-        'magenta': (255, 0, 255),
-        'orange': (255, 165, 0),
-        'pink': (255, 192, 203),
-        'purple': (128, 0, 128),
-        'brown': (165, 42, 42),
-        'lime': (0, 255, 0),
-        'navy': (0, 0, 128),
-        'maroon': (128, 0, 0),
-        'olive': (128, 128, 0),
-        'teal': (0, 128, 128),
-        'silver': (192, 192, 192),
+        'red': (255, 0, 0), 'green': (0, 128, 0), 'blue': (0, 0, 255), 'black': (0, 0, 0),
+        'white': (255, 255, 255), 'gray': (128, 128, 128), 'yellow': (255, 255, 0),
+        'cyan': (0, 255, 255), 'magenta': (255, 0, 255), 'orange': (255, 165, 0),
+        'pink': (255, 192, 203), 'purple': (128, 0, 128), 'brown': (165, 42, 42),
+        'lime': (0, 255, 0), 'navy': (0, 0, 128), 'maroon': (128, 0, 0),
+        'olive': (128, 128, 0), 'teal': (0, 128, 128), 'silver': (192, 192, 192),
     }
-
     min_dist = float("inf")
-    closest_name = None
+    closest = None
     for name, rgb in css3_names_to_rgb.items():
-        dist = np.linalg.norm(np.array(rgb_tuple) - np.array(rgb))
+        dist = sum((c1 - c2) ** 2 for c1, c2 in zip(rgb_tuple, rgb)) ** 0.5
         if dist < min_dist:
             min_dist = dist
-            closest_name = name
-    return closest_name
+            closest = name
+    return closest
 
-def particle_analysis(image, filename, n_clusters=6, min_area=10):
-    # Convert image to numpy arrays
-    img_rgb = np.array(image.convert("RGB"))
+def analyze_image_by_color_clusters(image, filename, n_clusters=6):
+    image = image.convert("RGB")
+    img_small = image.resize((image.width // 2, image.height // 2))  # Resize for speed
+    img_array = np.array(img_small)
+    pixels = img_array.reshape(-1, 3)
 
-    # Flatten pixels for clustering
-    pixels = img_rgb.reshape(-1, 3)
-
-    # KMeans clustering for dominant colors
     kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
     labels = kmeans.fit_predict(pixels)
-    centers = kmeans.cluster_centers_
+    centers = kmeans.cluster_centers_.astype(int)
 
-    # Create label image for segmentation
-    label_img = labels.reshape(img_rgb.shape[0], img_rgb.shape[1])
+    counts = Counter(labels)
+    total_pixels = sum(counts.values())
 
-    # Analyze each cluster as a group of particles
-    data_rows = []
-    total_image_area = img_rgb.shape[0] * img_rgb.shape[1]
+    rows = []
+    label_img = np.array([centers[label] for label in labels], dtype=np.uint8).reshape(img_array.shape)
 
-    for cluster_id, center_color in enumerate(centers):
-        mask = label_img == cluster_id
-        area = np.sum(mask)
-        if area < min_area:
-            continue
-
-        percent_area = (area / total_image_area) * 100
-        mean_color = center_color.astype(int)
-        color_name = closest_color_name(mean_color)
-        mean_intensity = int(np.mean(mean_color))
-
-        label = f"{filename} ({color_name})"
-
-        data_rows.append({
-            "Label": label,
+    for i, center in enumerate(centers):
+        color_name = closest_color_name(center)
+        count = counts[i]
+        percent_area = (count / total_pixels) * 100
+        mean_intensity = int(np.mean(center))
+        rows.append({
+            "Label": f"{filename} ({color_name})",
             "Color": color_name,
-            "Count": "-",  # No individual particle count here
-            "Total Area": round(area, 2),
-            "Average Size": "-",
-            "Percentage Area": round(percent_area, 3),
+            "Count": count,
+            "Total Area": count,
+            "Average Size": 1,  # Pixel-level
+            "Percentage Area": round(percent_area, 2),
             "Mean Intensity": mean_intensity
         })
 
-    # Generate overlay image with cluster colors
-    overlay = label2rgb(label_img, image=img_rgb, bg_label=-1)
+    return rows, label_img
 
-    return data_rows, overlay
-
-# --- STREAMLIT UI ---
-st.title("🧪 Accurate Particle Color Grouping")
+# --- Streamlit App ---
+st.title("🎨 Accurate Color Cluster Analyzer (No Thresholds Needed)")
+st.write("Upload any image to analyze the most dominant color regions without needing to adjust settings.")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 
 if uploaded_file:
     image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_container_width=True)
+    st.image(image, caption="Original Uploaded Image", use_column_width=True)
 
-    n_clusters = st.slider("Number of Color Groups (Clusters)", 2, 15, 6)
-    min_area = st.slider("Minimum Area (pixels)", 1, 500, 10)
+    with st.spinner("Clustering colors..."):
+        rows, clustered_img = analyze_image_by_color_clusters(image, uploaded_file.name, n_clusters=6)
 
-    with st.spinner("Analyzing image colors..."):
-        rows, overlay = particle_analysis(image, uploaded_file.name, n_clusters=n_clusters, min_area=min_area)
+    st.subheader("📊 Color Cluster Summary")
+    df = pd.DataFrame(rows)
+    st.dataframe(df)
 
-    if rows:
-        df = pd.DataFrame(rows)
-        st.subheader("📊 Particle Color Group Summary")
-        st.dataframe(df)
-
-        st.subheader("🖼️ Color Group Overlay")
-        st.image((overlay * 255).astype(np.uint8), use_container_width=True)
-    else:
-        st.warning("No significant color groups detected. Try lowering the minimum area or increasing clusters.")
+    st.subheader("🖼️ Clustered Image Preview")
+    st.image(clustered_img, caption="Clustered Color Regions", use_column_width=True)
 
