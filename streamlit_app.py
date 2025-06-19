@@ -61,15 +61,20 @@ if uploaded_file:
 
         df = pd.DataFrame(data_rows)
 
-        # Generate after-image with only top-N colors
+        # Reconstruct full image using the closest match from top-N
+        color_map = {color: color for color in top_colors}
+        default_color = (0, 0, 0)
         recolored_img = np.zeros_like(img_np)
+
         for i in range(img_np.shape[0]):
             for j in range(img_np.shape[1]):
                 pixel = tuple(img_np[i, j])
-                if pixel in top_colors:
-                    recolored_img[i, j] = pixel
+                if pixel in color_map:
+                    recolored_img[i, j] = color_map[pixel]
                 else:
-                    recolored_img[i, j] = (0, 0, 0)  # background
+                    # Find the closest color in top_colors
+                    closest = min(top_colors, key=lambda c: sum((p - q) ** 2 for p, q in zip(c, pixel)))
+                    recolored_img[i, j] = closest
 
         recolored_pil = Image.fromarray(recolored_img)
 
@@ -79,6 +84,5 @@ if uploaded_file:
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button("Download CSV", csv, "pixel_colors.csv", "text/csv")
 
-    st.subheader("🖼️ Detected Color Overlay")
-    st.image(recolored_pil, caption="Top-N Color Map", use_column_width=True)
-
+    st.subheader("🖼️ Reconstructed Image After Analysis")
+    st.image(recolored_pil, caption="AI-Reconstructed Image", use_column_width=True)
