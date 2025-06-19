@@ -41,6 +41,7 @@ if uploaded_file:
         counter = Counter(pixel_list)
         total_pixels = sum(counter.values())
         most_common = counter.most_common(top_n)
+        top_colors = set([color for color, _ in most_common])
 
         data_rows = []
         for i, (color, count) in enumerate(most_common):
@@ -60,9 +61,24 @@ if uploaded_file:
 
         df = pd.DataFrame(data_rows)
 
+        # Generate after-image with only top-N colors
+        recolored_img = np.zeros_like(img_np)
+        for i in range(img_np.shape[0]):
+            for j in range(img_np.shape[1]):
+                pixel = tuple(img_np[i, j])
+                if pixel in top_colors:
+                    recolored_img[i, j] = pixel
+                else:
+                    recolored_img[i, j] = (0, 0, 0)  # background
+
+        recolored_pil = Image.fromarray(recolored_img)
+
     st.subheader("📊 Exact Pixel Color Summary")
     st.dataframe(df)
 
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button("Download CSV", csv, "pixel_colors.csv", "text/csv")
+
+    st.subheader("🖼️ Detected Color Overlay")
+    st.image(recolored_pil, caption="Top-N Color Map", use_column_width=True)
 
