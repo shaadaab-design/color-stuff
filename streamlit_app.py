@@ -32,6 +32,7 @@ if uploaded_file:
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
     top_n = st.slider("Top N Dominant Colors", 2, 50, 10)
+    threshold = st.slider("Distance Threshold for Color Match", 0, 100, 15)
 
     with st.spinner("Analyzing every pixel exactly..."):
         img_np = np.array(image)
@@ -51,38 +52,36 @@ if uploaded_file:
             hex_code = '#%02x%02x%02x' % color
 
             data_rows.append({
-                "Rank": i + 1,
-                "% of Image": round(pct, 3),
-                "RGB": color,
-                "Hex": hex_code,
-                "Closest Name": name,
-                "Mean Intensity": mean_intensity
+                "Particle": name,
+                "Count": count,
+                "Total Area": count,
+                "Average Size": 1,
+                "%Area": round(pct, 3),
+                "Mean": mean_intensity
             })
 
         df = pd.DataFrame(data_rows)
 
-        # Reconstruct full image using the closest match from top-N
-        color_map = {color: color for color in top_colors}
-        default_color = (0, 0, 0)
+        # Reconstruct image only if distance is within threshold
         recolored_img = np.zeros_like(img_np)
-
         for i in range(img_np.shape[0]):
             for j in range(img_np.shape[1]):
                 pixel = tuple(img_np[i, j])
-                if pixel in color_map:
-                    recolored_img[i, j] = color_map[pixel]
+                distances = [(c, sum((p - q) ** 2 for p, q in zip(c, pixel)) ** 0.5) for c in top_colors]
+                closest_color, min_dist = min(distances, key=lambda x: x[1])
+                if min_dist < threshold:
+                    recolored_img[i, j] = closest_color
                 else:
-                    # Find the closest color in top_colors
-                    closest = min(top_colors, key=lambda c: sum((p - q) ** 2 for p, q in zip(c, pixel)))
-                    recolored_img[i, j] = closest
+                    recolored_img[i, j] = pixel  # keep original pixel if no close match
 
         recolored_pil = Image.fromarray(recolored_img)
 
-    st.subheader("📊 Exact Pixel Color Summary")
+    st.subheader("📊 Particle Summary Table")
     st.dataframe(df)
 
     csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", csv, "pixel_colors.csv", "text/csv")
+    st.download_button("Download CSV", csv, "particle_summary.csv", "text/csv")
 
     st.subheader("🖼️ Reconstructed Image After Analysis")
     st.image(recolored_pil, caption="AI-Reconstructed Image", use_column_width=True)
+
