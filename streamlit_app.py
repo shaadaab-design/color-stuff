@@ -3,60 +3,63 @@ import numpy as np
 from PIL import Image
 from collections import Counter
 import pandas as pd
-import colorsys
 from skimage.measure import label, regionprops
+from skimage.color import rgb2lab, deltaE_cie76
 import matplotlib.pyplot as plt
 
-# Convert RGB to HSV (0-360 hue scale)
-def rgb_to_hsv_pixel(rgb):
-    r, g, b = rgb
-    return tuple(round(i * 255) for i in colorsys.rgb_to_hsv(r / 255, g / 255, b / 255))
+# Define reference colors in RGB and convert to Lab
+hue_ref_colors = {
+    "red": (255, 0, 0),
+    "orange": (255, 165, 0),
+    "yellow": (255, 255, 0),
+    "green": (0, 255, 0),
+    "cyan": (0, 255, 255),
+    "blue": (0, 0, 255),
+    "purple": (128, 0, 128),
+    "pink": (255, 192, 203),
+    "black": (0, 0, 0),
+    "gray": (128, 128, 128),
+    "white": (255, 255, 255)
+}
 
-def classify_color_hue(hsv):
-    h, s, v = hsv
-    if s < 25 or v < 25:
-        return "black"
-    elif v > 230 and s < 30:
-        return "white"
-    elif s < 30:
-        return "gray"
-    if 0 <= h <= 15 or h >= 230:
-        return "red"
-    elif 16 <= h <= 45:
-        return "orange"
-    elif 46 <= h <= 75:
-        return "yellow"
-    elif 76 <= h <= 150:
-        return "green"
-    elif 151 <= h <= 200:
-        return "cyan"
-    elif 201 <= h <= 250:
-        return "blue"
-    elif 251 <= h <= 300:
-        return "purple"
-    else:
-        return "pink"
+ref_lab = {k: rgb2lab(np.uint8([[v]]))[0][0] for k, v in hue_ref_colors.items()}
 
-st.title("🔬 High-Sensitivity Color Classification for Medical Imaging")
+st.title("🔬 DeltaE-Based Perceptual Color Classification (CIE-Lab)")
 
 uploaded_file = st.file_uploader("Upload a medical image", type=["jpg", "jpeg", "png", "tif", "tiff"])
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    with st.spinner("Analyzing pixel color categories with medical-level precision..."):
-        img_np = np.array(image)
-        flat_pixels = img_np.reshape(-1, 3)
-        hsv_pixels = [rgb_to_hsv_pixel(rgb) for rgb in flat_pixels]
-        labels = [classify_color_hue(hsv) for hsv in hsv_pixels]
+    threshold = st.slider("DeltaE Sensitivity Threshold", 5, 60, 25)
 
-        counter = Counter(labels)
+    with st.spinner("Classifying pixels using perceptual Lab color model and DeltaE threshold..."):
+        img_np = np.array(image)
+        h, w, _ = img_np.shape
+        flat_pixels = img_np.reshape(-1, 3)
+        lab_pixels = rgb2lab(flat_pixels.reshape(-1, 1, 3)).reshape(-1, 3)
+
+        # Multi-match classification based on threshold
+        pixel_labels = []
+        for lab_pixel in lab_pixels:
+            best_label = None
+            best_distance = float("inf")
+            for name, ref in ref_lab.items():
+                dist = np.linalg.norm(lab_pixel - ref)
+                if dist < threshold and dist < best_distance:
+                    best_label = name
+                    best_distance = dist
+            pixel_labels.append(best_label if best_label else "unclassified")
+
+        counter = Counter(pixel_labels)
         total = sum(counter.values())
 
-        # Prepare particle table
+        # Particle summary table
         data_rows = []
         for name, count in counter.items():
-            mask = np.array(labels) == name
+            if name == "unclassified":
+                continue
+            mask = np.array(pixel_labels) == name
             selected_pixels = flat_pixels[mask]
             mean_intensity = int(np.mean(selected_pixels)) if len(selected_pixels) > 0 else 0
             data_rows.append({
@@ -70,18 +73,26 @@ if uploaded_file:
 
         df = pd.DataFrame(data_rows).sort_values("%Area", ascending=False)
 
-    st.subheader("📊 Particle Summary Table (Hue-Classified)")
+    st.subheader("📊 Particle Summary Table (DeltaE-Classified)")
     st.dataframe(df)
 
     csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", csv, "hue_classified_summary.csv", "text/csv")
+    st.download_button("Download CSV", csv, "deltaE_classified_summary.csv", "text/csv")
 
-    # Region visualization for double-checking
-    st.subheader("🧪 Visual Region Map: Confirm Detected Color Areas")
-    selected_hue = st.selectbox("Select hue to visualize as a region mask", df["Particle"].str.extract(r'\((.*?)\)')[0].unique())
+    # Reconstructed image using label colors
+    st.subheader("🖼️ Perceptually Reconstructed Image")
+    reconstructed_img = np.zeros((h * w, 3), dtype=np.uint8)
+    for i, name in enumerate(pixel_labels):
+        reconstructed_img[i] = hue_ref_colors.get(name, (0, 0, 0))
+    reconstructed_img = reconstructed_img.reshape((h, w, 3))
+    st.image(Image.fromarray(reconstructed_img), caption="DeltaE Reconstructed Image", use_column_width=True)
 
-    # Generate mask and region overlay for selected hue
-    label_array = np.array(labels).reshape(img_np.shape[0], img_np.shape[1])
+    # Region overlay for selected hue
+    st.subheader("🧪 Region Detection by DeltaE")
+    available_labels = [l for l in df["Particle"].str.extract(r'\((.*?)\)')[0].unique() if l != "unclassified"]
+    selected_hue = st.selectbox("Select color to view region map", available_labels)
+
+    label_array = np.array(pixel_labels).reshape(h, w)
     binary_mask = (label_array == selected_hue).astype(np.uint8)
     labeled = label(binary_mask)
     props = regionprops(labeled)
